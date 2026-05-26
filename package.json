@@ -1,0 +1,47 @@
+{
+  "name": "pi-ez-chat-git",
+  "version": "0.1.0",
+  "description": "pi extension that wires git identity and SSH-agent GitHub auth into pi-chat Gondolin VMs.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "pi-chat",
+    "gondolin",
+    "git"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bry-guy/pi-ez-chat-git.git"
+  },
+  "homepage": "https://github.com/bry-guy/pi-ez-chat-git#readme",
+  "bugs": {
+    "url": "https://github.com/bry-guy/pi-ez-chat-git/issues"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "test": "tsx --test test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/gondolin": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/gondolin": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
