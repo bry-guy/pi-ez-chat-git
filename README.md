@@ -29,7 +29,9 @@ Load this extension in the same pi process as `pi-chat`, before the first chat V
 - `/chat-git identity "Name <email>"`
 - `/chat-git status`
 
-After changing config, restart the pi-chat sandbox (`/chat-new` or reconnect) so the next `VM.create` picks it up.
+These commands also work from pi-chat itself, including mention-only channels, for example `@bot /chat-git status` or `@bot /chat-git enable`.
+
+After changing config, restart the pi-chat sandbox by sending `@bot /new` in the chat channel so the next `VM.create` picks it up. pi-chat currently handles `/new` before extension input hooks run, so this extension returns a reload hint rather than force-restarting the VM from inside the VM.
 
 ## Guest behavior
 

@@ -7,7 +7,14 @@ import { parseGitconfigIdentity, parseIdentity } from "./src/git-identity.js";
 import { renderGitconfig } from "./src/gitconfig.js";
 import { resolveSshAuth } from "./src/ssh.js";
 import { applyGitConfig, installVmCreateWrapper } from "./src/wrapper.js";
+import { matchSlashCommand, stripLeadingMention } from "./src/match.js";
 import type { GitStore, VmCreateOptionsLike } from "./src/types.js";
+
+test("matches slash commands after leading bot mentions", () => {
+  assert.equal(stripLeadingMention("  @bot /chat-git status"), "/chat-git status");
+  assert.deepEqual(matchSlashCommand("<@123> /chat-git enable", ["chat-git"]), { name: "chat-git", args: "enable" });
+  assert.equal(matchSlashCommand("@bot hello", ["chat-git"]), undefined);
+});
 
 test("parses identity strings", () => {
   assert.deepEqual(parseIdentity("Ada Lovelace <ada@example.com>"), { name: "Ada Lovelace", email: "ada@example.com" });
