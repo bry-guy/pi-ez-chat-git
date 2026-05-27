@@ -7,12 +7,16 @@ import { parseGitconfigIdentity, parseIdentity } from "./src/git-identity.js";
 import { renderGitconfig } from "./src/gitconfig.js";
 import { resolveSshAuth } from "./src/ssh.js";
 import { applyGitConfig, installVmCreateWrapper } from "./src/wrapper.js";
-import { matchSlashCommand, stripLeadingMention } from "./src/match.js";
+import { matchSlashCommand, normalizeRemoteCommandText, stripLeadingMention } from "./src/match.js";
 import type { GitStore, VmCreateOptionsLike } from "./src/types.js";
 
 test("matches slash commands after leading bot mentions", () => {
   assert.equal(stripLeadingMention("  @bot /chat-git status"), "/chat-git status");
   assert.deepEqual(matchSlashCommand("<@123> /chat-git enable", ["chat-git"]), { name: "chat-git", args: "enable" });
+  assert.deepEqual(matchSlashCommand("/chat-git status <@123>", ["chat-git"]), { name: "chat-git", args: "status" });
+  assert.deepEqual(matchSlashCommand("- [2026-05-27T15:01:05.371Z] [uid:235246238382030849] prettybry: <@1496161074997624843> /chat-git", ["chat-git"]), { name: "chat-git", args: "" });
+  assert.deepEqual(matchSlashCommand("- [2026-05-27T15:01:05.371Z] [uid:235246238382030849] prettybry: /chat-git status <@1496161074997624843>", ["chat-git"]), { name: "chat-git", args: "status" });
+  assert.equal(normalizeRemoteCommandText("- [2026-05-27T15:01:05.371Z] [uid:235246238382030849] prettybry: hello"), "hello");
   assert.equal(matchSlashCommand("@bot hello", ["chat-git"]), undefined);
 });
 
