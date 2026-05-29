@@ -177,6 +177,10 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
   return { message: lines.join("\n") };
 }
 
+function fenced(text: string): string {
+  return `\`\`\`\n${text.replace(/```/g, "`​``")}\n\`\`\``;
+}
+
 export default async function (pi: ExtensionAPI) {
   const wrapper = await tryInstallRuntimeWrapper();
 
@@ -199,12 +203,12 @@ export default async function (pi: ExtensionAPI) {
       const result = await runChatGit(match.args, ctx, wrapper);
       return {
         action: "transform",
-        text: `The remote /chat-git command completed. Reply to the user with this result exactly:\n\n${result.message}${reloadHint(result.changed ?? false)}`,
+        text: `The remote /chat-git command completed. Reply to the user with exactly this fenced code block and no other text:\n\n${fenced(`${result.message}${reloadHint(result.changed ?? false)}`)}`,
       };
     } catch (error) {
       return {
         action: "transform",
-        text: `The remote /chat-git command failed. Reply to the user with this error:\n\n${error instanceof Error ? error.message : String(error)}`,
+        text: `The remote /chat-git command failed. Reply to the user with exactly this fenced code block and no other text:\n\n${fenced(error instanceof Error ? error.message : String(error))}`,
       };
     }
   });
