@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseGitconfigIdentity, parseIdentity } from "./src/git-identity.js";
+import { parseGitconfigIdentity, parseIdentity, resolveHostGitIdentity } from "./src/git-identity.js";
 import { renderGitconfig } from "./src/gitconfig.js";
 import { resolveSshAuth } from "./src/ssh.js";
 import { applyGitConfig, installVmCreateWrapper } from "./src/wrapper.js";
@@ -32,6 +32,22 @@ test("parses host gitconfig identity", () => {
   email = ada@example.com
 `);
   assert.deepEqual(parsed, { name: "Ada Lovelace", email: "ada@example.com" });
+});
+
+test("resolves host git identity through git includes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "chat-git-home-"));
+  const previousHome = process.env.HOME;
+  process.env.HOME = dir;
+  await writeFile(join(dir, ".gitconfig"), "[include]\n\tpath = ~/.gitconfig.identity.local\n", "utf8");
+  await writeFile(join(dir, ".gitconfig.identity.local"), "[user]\n\tname = Ada Lovelace\n\temail = ada@example.com\n", "utf8");
+  try {
+    const identity = await resolveHostGitIdentity(join(dir, ".gitconfig"));
+    assert.deepEqual(identity, { name: "Ada Lovelace", email: "ada@example.com" });
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("renders generated gitconfig", () => {

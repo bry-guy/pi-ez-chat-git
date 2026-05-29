@@ -1,7 +1,11 @@
+import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { GitIdentity } from "./types.js";
+
+const execFileAsync = promisify(execFile);
 
 export function parseIdentity(input: string): GitIdentity {
   const trimmed = input.trim();
@@ -40,7 +44,23 @@ export function parseGitconfigIdentity(content: string): GitIdentity | undefined
   return name && email ? { name, email } : undefined;
 }
 
+async function gitConfigGet(key: "user.name" | "user.email"): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFileAsync("git", ["config", "--global", "--includes", "--get", key], { encoding: "utf8" });
+    const value = stdout.trim();
+    return value || undefined;
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    // `git config --get` exits 1 when the key is missing.
+    if (code === 1 || code === "1") return undefined;
+    return undefined;
+  }
+}
+
 export async function resolveHostGitIdentity(gitconfigPath = join(homedir(), ".gitconfig")): Promise<GitIdentity | undefined> {
+  const [gitName, gitEmail] = await Promise.all([gitConfigGet("user.name"), gitConfigGet("user.email")]);
+  if (gitName && gitEmail) return { name: gitName, email: gitEmail };
+
   try {
     return parseGitconfigIdentity(await readFile(gitconfigPath, "utf8"));
   } catch (error) {
