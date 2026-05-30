@@ -80,6 +80,8 @@ test("applyGitConfig mutates VM options for enabled conversation", async () => {
     "acct/chan": {
       enabled: true,
       identity: { name: "Ada", email: "ada@example.com" },
+      image: "pi-ez-chat:latest",
+      env: { SELFHOST_PROXMOX_ENDPOINT: "https://pve:8006/" },
       ssh: { agent: "/tmp/agent.sock", allowedHosts: ["github.com"] },
       tcp: { hosts: { "pve:8006": "100.64.0.1:8006" } },
     },
@@ -101,14 +103,16 @@ test("applyGitConfig mutates VM options for enabled conversation", async () => {
     },
   );
   assert.deepEqual(opts.vfs?.mounts?.["/gondolin-git"], { hostPath: dir, readonly: true });
-  assert.deepEqual(opts.env, { GIT_CONFIG_SYSTEM: "/gondolin-git/gitconfig", GIT_TERMINAL_PROMPT: "0" });
   assert.equal(opts.ssh?.agent, "/tmp/agent.sock");
   assert.deepEqual(opts.ssh?.allowedHosts, ["github.com"]);
+  assert.equal(opts.sandbox?.imagePath, "pi-ez-chat:latest");
   assert.equal(opts.dns?.mode, "synthetic");
   assert.equal(opts.dns?.syntheticHostMapping, "per-host");
   assert.deepEqual(opts.tcp?.hosts, { "pve:8006": "100.64.0.1:8006" });
+  assert.deepEqual(opts.env, { SELFHOST_PROXMOX_ENDPOINT: "https://pve:8006/", GIT_CONFIG_SYSTEM: "/gondolin-git/gitconfig", GIT_TERMINAL_PROMPT: "0" });
   assert.match(await readFile(join(dir, "gitconfig"), "utf8"), /insteadOf = https:\/\/github.com\//);
   assert.equal((last as { sshApplied: boolean }).sshApplied, true);
+  assert.equal((last as { image: string }).image, "pi-ez-chat:latest");
   assert.deepEqual((last as { tcpHosts: Record<string, string> }).tcpHosts, { "pve:8006": "100.64.0.1:8006" });
   await rm(dir, { recursive: true, force: true });
 });

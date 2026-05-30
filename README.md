@@ -24,7 +24,7 @@ Load this extension in the same pi process as `pi-chat`, before the first chat V
 
 ## Commands
 
-- `/chat-git enable [--identity "Name <email>"] [--no-ssh] [--ssh-agent SOCK] [--allow-host HOST] [--tcp guest-host[:port]=upstream-host:port]`
+- `/chat-git enable [--identity "Name <email>"] [--no-ssh] [--ssh-agent SOCK] [--allow-host HOST] [--tcp guest-host[:port]=upstream-host:port] [--image IMAGE] [--env KEY=VALUE]`
 - `/chat-git disable`
 - `/chat-git identity "Name <email>"`
 - `/chat-git status`
@@ -52,6 +52,12 @@ For non-HTTP/TLS TCP services such as a Proxmox API on `:8006`, add explicit TCP
 ```
 
 Then use `https://pve-sffpc:8006/` inside the VM.
+
+For per-conversation custom runtime defaults, set `--image` and non-secret `--env` values, for example:
+
+```text
+/chat-git enable --image pi-ez-chat:latest --env SELFHOST_PROXMOX_ENDPOINT=https://pve-sffpc:8006/
+```
 
 ## Notes
 

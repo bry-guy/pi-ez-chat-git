@@ -48,19 +48,21 @@ function shellTokens(input: string): string[] {
   return tokens;
 }
 
-function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean; sshAgent?: string; allowedHosts: string[]; tcpHosts: Record<string, string> } {
+function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean; sshAgent?: string; allowedHosts: string[]; tcpHosts: Record<string, string>; image?: string; env: Record<string, string> } {
   const tokens = shellTokens(args);
   let identity: GitIdentity | undefined;
   let noSsh = false;
   let sshAgent: string | undefined;
   const allowedHosts: string[] = [];
   const tcpHosts: Record<string, string> = {};
+  const env: Record<string, string> = {};
+  let image: string | undefined;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     switch (token) {
       case "--identity": {
         const value = tokens[++i];
-        if (!value) throw new Error('Usage: /chat-git enable [--identity "Name <email>"] [--no-ssh] [--ssh-agent SOCK] [--allow-host HOST]');
+        if (!value) throw new Error('Usage: /chat-git enable [--identity "Name <email>"] [--no-ssh] [--ssh-agent SOCK] [--allow-host HOST] [--tcp guest-host[:port]=upstream-host:port] [--image IMAGE] [--env KEY=VALUE]');
         identity = parseIdentity(value);
         break;
       }
@@ -87,11 +89,27 @@ function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean
         tcpHosts[guest.trim()] = upstream.trim();
         break;
       }
+      case "--image": {
+        const value = tokens[++i];
+        if (!value?.trim()) throw new Error("--image requires an image selector");
+        image = value.trim();
+        break;
+      }
+      case "--env": {
+        const value = tokens[++i];
+        if (!value || !value.includes("=")) throw new Error("--env requires KEY=VALUE");
+        const index = value.indexOf("=");
+        const key = value.slice(0, index).trim();
+        const envValue = value.slice(index + 1);
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) throw new Error(`invalid --env key: ${key}`);
+        env[key] = envValue;
+        break;
+      }
       default:
         throw new Error(`unknown /chat-git enable argument: ${token}`);
     }
   }
-  return { identity, noSsh, sshAgent, allowedHosts, tcpHosts };
+  return { identity, noSsh, sshAgent, allowedHosts, tcpHosts, image, env };
 }
 
 function splitSubcommand(args: string): { subcommand: string; rest: string } {
@@ -123,6 +141,8 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
       ...previous,
       enabled: true,
       ...(parsed.identity ? { identity: parsed.identity } : {}),
+      ...(parsed.image ? { image: parsed.image } : previous.image ? { image: previous.image } : {}),
+      ...(Object.keys(parsed.env).length ? { env: { ...(previous.env ?? {}), ...parsed.env } } : previous.env ? { env: previous.env } : {}),
       ssh: {
         ...(previous.ssh ?? {}),
         enabled: !parsed.noSsh,
@@ -170,6 +190,11 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
     }
     lines.push(`  enabled: ${config.enabled ? "yes" : "no"}`);
     for (const line of await defaultIdentityLines(config)) lines.push(`  ${line}`);
+    lines.push(`  image: ${config.image ?? "default"}`);
+    if (config.env && Object.keys(config.env).length > 0) {
+      lines.push("  env:");
+      for (const [key, value] of Object.entries(config.env).sort(([a], [b]) => a.localeCompare(b))) lines.push(`    ${key}=${value}`);
+    }
     lines.push(`  ssh: ${config.ssh?.enabled === false ? "disabled" : "enabled"}`);
     lines.push(`  allowed hosts: ${(config.ssh?.allowedHosts ?? ["github.com"]).join(", ")}`);
     lines.push(`  ssh agent: ${config.ssh?.agent ?? process.env.SSH_AUTH_SOCK ?? "not set"}`);
@@ -184,6 +209,11 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
     lines.push(`\nlast VM apply for ${last.conversationId} at ${last.at}:`);
     lines.push(`  identity: ${last.identity ? formatIdentity(last.identity) : "not applied"}`);
     lines.push(`  gitconfig: ${last.gitconfigGuestPath ?? "not mounted"}`);
+    lines.push(`  image: ${last.image ?? "default"}`);
+    if (last.env && Object.keys(last.env).length > 0) {
+      lines.push("  env:");
+      for (const [key, value] of Object.entries(last.env).sort(([a], [b]) => a.localeCompare(b))) lines.push(`    ${key}=${value}`);
+    }
     lines.push(`  ssh applied: ${last.sshApplied ? "yes" : "no"}`);
     lines.push(`  allowed hosts: ${last.allowedHosts.join(", ") || "none"}`);
     lines.push(`  known_hosts: ${last.knownHostsFiles.join(", ") || "none"}`);

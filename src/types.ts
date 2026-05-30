@@ -6,6 +6,10 @@ export type GitIdentity = {
 export type ConversationGitConfig = {
   enabled: boolean;
   identity?: GitIdentity;
+  /** Optional Gondolin image to use for this conversation. */
+  image?: string;
+  /** Non-secret environment variables to inject into the VM. */
+  env?: Record<string, string>;
   ssh?: {
     enabled?: boolean;
     agent?: string;
@@ -25,6 +29,8 @@ export type AppliedGitState = {
   enabled: boolean;
   identity?: GitIdentity;
   gitconfigGuestPath?: string;
+  image?: string;
+  env?: Record<string, string>;
   sshEnabled: boolean;
   sshApplied: boolean;
   allowedHosts: string[];
@@ -40,6 +46,10 @@ export type EnvInput = string[] | Record<string, string>;
 export type VmCreateOptionsLike = {
   sessionLabel?: string;
   env?: EnvInput;
+  sandbox?: {
+    imagePath?: string;
+    [key: string]: unknown;
+  };
   dns?: {
     mode?: string;
     trustedServers?: string[];

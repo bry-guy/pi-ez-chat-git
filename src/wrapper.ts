@@ -89,6 +89,14 @@ export async function applyGitConfig(
   if (!config?.enabled) return;
 
   const warnings: string[] = [];
+
+  if (config.image?.trim()) {
+    opts.sandbox = { ...(opts.sandbox ?? {}), imagePath: opts.sandbox?.imagePath ?? config.image.trim() };
+  }
+  if (config.env && Object.keys(config.env).length > 0) {
+    opts.env = mergeEnv(opts.env, config.env);
+  }
+
   const identity = await resolveIdentity(config.identity);
   if (!identity) warnings.push("No git identity configured and no host ~/.gitconfig user.name/user.email found.");
 
@@ -141,6 +149,8 @@ export async function applyGitConfig(
     enabled: true,
     identity,
     gitconfigGuestPath: GUEST_GITCONFIG_PATH,
+    image: config.image,
+    env: config.env,
     sshEnabled: ssh.enabled,
     sshApplied: ssh.applied,
     allowedHosts: ssh.allowedHosts,
@@ -150,7 +160,7 @@ export async function applyGitConfig(
     warnings,
     at: new Date().toISOString(),
   }).catch(() => undefined);
-  await debug(`[apply] conversation=${conversationId} identity=${identity ? "yes" : "no"} ssh=${ssh.applied ? "yes" : "no"} warnings=${warnings.length}`).catch(
+  await debug(`[apply] conversation=${conversationId} image=${config.image ?? "default"} identity=${identity ? "yes" : "no"} ssh=${ssh.applied ? "yes" : "no"} warnings=${warnings.length}`).catch(
     () => undefined,
   );
 }
