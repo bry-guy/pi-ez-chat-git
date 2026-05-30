@@ -114,6 +114,7 @@ export async function applyGitConfig(
     opts.env = mergeEnv(opts.env, {
       GIT_CONFIG_SYSTEM: GUEST_GITCONFIG_PATH,
       GIT_TERMINAL_PROMPT: "0",
+      ...(ssh.applied ? { GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/pi-ez-chat-known_hosts" } : {}),
     });
   }
 

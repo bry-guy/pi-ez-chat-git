@@ -43,7 +43,7 @@ When enabled, the VM gets a generated git config mounted at `/gondolin-git/gitco
 - `url."ssh://git@github.com/".insteadOf = https://github.com/` when SSH-agent auth is available
 - `safe.directory = *`
 
-Gondolin SSH egress is configured for `github.com` with host `SSH_AUTH_SOCK` by default. Add more SSH hostnames with `--allow-host`; prefer hostnames over IP literals because Gondolin's synthetic DNS needs a hostname to associate the outbound SSH flow with an allowed upstream host.
+Gondolin SSH egress is configured for `github.com` with host `SSH_AUTH_SOCK` by default. Git commands also get a `GIT_SSH_COMMAND` using `StrictHostKeyChecking=accept-new` and an ephemeral guest known-hosts file, which keeps public GitHub clones and private SSH pushes usable in disposable VMs. Add more SSH hostnames with `--allow-host`; prefer hostnames over IP literals because Gondolin's synthetic DNS needs a hostname to associate the outbound SSH flow with an allowed upstream host.
 
 For non-HTTP/TLS TCP services such as a Proxmox API on `:8006`, add explicit TCP egress mappings with `--tcp`, for example:
 

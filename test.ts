@@ -109,7 +109,12 @@ test("applyGitConfig mutates VM options for enabled conversation", async () => {
   assert.equal(opts.dns?.mode, "synthetic");
   assert.equal(opts.dns?.syntheticHostMapping, "per-host");
   assert.deepEqual(opts.tcp?.hosts, { "pve:8006": "100.64.0.1:8006" });
-  assert.deepEqual(opts.env, { SELFHOST_PROXMOX_ENDPOINT: "https://pve:8006/", GIT_CONFIG_SYSTEM: "/gondolin-git/gitconfig", GIT_TERMINAL_PROMPT: "0" });
+  assert.deepEqual(opts.env, {
+    SELFHOST_PROXMOX_ENDPOINT: "https://pve:8006/",
+    GIT_CONFIG_SYSTEM: "/gondolin-git/gitconfig",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/pi-ez-chat-known_hosts",
+  });
   assert.match(await readFile(join(dir, "gitconfig"), "utf8"), /insteadOf = https:\/\/github.com\//);
   assert.equal((last as { sshApplied: boolean }).sshApplied, true);
   assert.equal((last as { image: string }).image, "pi-ez-chat:latest");
