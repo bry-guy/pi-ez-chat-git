@@ -48,12 +48,13 @@ function shellTokens(input: string): string[] {
   return tokens;
 }
 
-function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean; sshAgent?: string; allowedHosts: string[] } {
+function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean; sshAgent?: string; allowedHosts: string[]; tcpHosts: Record<string, string> } {
   const tokens = shellTokens(args);
   let identity: GitIdentity | undefined;
   let noSsh = false;
   let sshAgent: string | undefined;
   const allowedHosts: string[] = [];
+  const tcpHosts: Record<string, string> = {};
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
     switch (token) {
@@ -78,11 +79,19 @@ function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean
         allowedHosts.push(value);
         break;
       }
+      case "--tcp": {
+        const value = tokens[++i];
+        if (!value || !value.includes("=")) throw new Error("--tcp requires guest-host[:port]=upstream-host:port");
+        const [guest, upstream] = value.split("=", 2);
+        if (!guest.trim() || !upstream.trim()) throw new Error("--tcp requires guest-host[:port]=upstream-host:port");
+        tcpHosts[guest.trim()] = upstream.trim();
+        break;
+      }
       default:
         throw new Error(`unknown /chat-git enable argument: ${token}`);
     }
   }
-  return { identity, noSsh, sshAgent, allowedHosts };
+  return { identity, noSsh, sshAgent, allowedHosts, tcpHosts };
 }
 
 function splitSubcommand(args: string): { subcommand: string; rest: string } {
@@ -120,6 +129,7 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
         ...(parsed.sshAgent ? { agent: parsed.sshAgent } : {}),
         ...(parsed.allowedHosts.length ? { allowedHosts: parsed.allowedHosts } : previous.ssh?.allowedHosts ? { allowedHosts: previous.ssh.allowedHosts } : {}),
       },
+      ...(Object.keys(parsed.tcpHosts).length ? { tcp: { hosts: { ...(previous.tcp?.hosts ?? {}), ...parsed.tcpHosts } } } : previous.tcp ? { tcp: previous.tcp } : {}),
     };
     await saveGitStore(store);
     return { changed: true, message: `Enabled pi-ez-chat-git for ${conversationId}.` };
@@ -163,6 +173,11 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
     lines.push(`  ssh: ${config.ssh?.enabled === false ? "disabled" : "enabled"}`);
     lines.push(`  allowed hosts: ${(config.ssh?.allowedHosts ?? ["github.com"]).join(", ")}`);
     lines.push(`  ssh agent: ${config.ssh?.agent ?? process.env.SSH_AUTH_SOCK ?? "not set"}`);
+    const tcpHosts = config.tcp?.hosts ?? {};
+    if (Object.keys(tcpHosts).length > 0) {
+      lines.push("  tcp mappings:");
+      for (const [guest, upstream] of Object.entries(tcpHosts).sort(([a], [b]) => a.localeCompare(b))) lines.push(`    ${guest} -> ${upstream}`);
+    }
   }
   const last = await readLastApply();
   if (last && (!conversationId || last.conversationId === conversationId)) {
@@ -172,6 +187,10 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
     lines.push(`  ssh applied: ${last.sshApplied ? "yes" : "no"}`);
     lines.push(`  allowed hosts: ${last.allowedHosts.join(", ") || "none"}`);
     lines.push(`  known_hosts: ${last.knownHostsFiles.join(", ") || "none"}`);
+    if (last.tcpHosts && Object.keys(last.tcpHosts).length > 0) {
+      lines.push("  tcp mappings:");
+      for (const [guest, upstream] of Object.entries(last.tcpHosts).sort(([a], [b]) => a.localeCompare(b))) lines.push(`    ${guest} -> ${upstream}`);
+    }
     lines.push(`  warnings: ${last.warnings.join("; ") || "none"}`);
   }
   return { message: lines.join("\n") };

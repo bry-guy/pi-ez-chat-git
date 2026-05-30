@@ -109,6 +109,19 @@ export async function applyGitConfig(
     });
   }
 
+  const tcpHosts = config.tcp?.hosts && Object.keys(config.tcp.hosts).length > 0 ? config.tcp.hosts : undefined;
+  if (tcpHosts) {
+    opts.tcp = {
+      ...(opts.tcp ?? {}),
+      hosts: { ...(opts.tcp?.hosts ?? {}), ...tcpHosts },
+    };
+    opts.dns = {
+      ...(opts.dns ?? {}),
+      mode: "synthetic",
+      syntheticHostMapping: "per-host",
+    };
+  }
+
   if (ssh.applied) {
     opts.ssh = {
       ...(opts.ssh ?? {}),
@@ -133,6 +146,7 @@ export async function applyGitConfig(
     allowedHosts: ssh.allowedHosts,
     agent: ssh.agent,
     knownHostsFiles: ssh.knownHostsFiles,
+    tcpHosts,
     warnings,
     at: new Date().toISOString(),
   }).catch(() => undefined);

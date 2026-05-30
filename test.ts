@@ -77,7 +77,12 @@ test("applyGitConfig mutates VM options for enabled conversation", async () => {
   const workspace = join(process.env.HOME!, ".pi/agent/chat/accounts/acct/channels/chan/workspace");
   const opts: VmCreateOptionsLike = { vfs: { mounts: { "/workspace": { rootPath: workspace } } } };
   const store: GitStore = {
-    "acct/chan": { enabled: true, identity: { name: "Ada", email: "ada@example.com" }, ssh: { agent: "/tmp/agent.sock", allowedHosts: ["github.com"] } },
+    "acct/chan": {
+      enabled: true,
+      identity: { name: "Ada", email: "ada@example.com" },
+      ssh: { agent: "/tmp/agent.sock", allowedHosts: ["github.com"] },
+      tcp: { hosts: { "pve:8006": "100.64.0.1:8006" } },
+    },
   };
   let last: unknown;
   await applyGitConfig(
@@ -101,8 +106,10 @@ test("applyGitConfig mutates VM options for enabled conversation", async () => {
   assert.deepEqual(opts.ssh?.allowedHosts, ["github.com"]);
   assert.equal(opts.dns?.mode, "synthetic");
   assert.equal(opts.dns?.syntheticHostMapping, "per-host");
+  assert.deepEqual(opts.tcp?.hosts, { "pve:8006": "100.64.0.1:8006" });
   assert.match(await readFile(join(dir, "gitconfig"), "utf8"), /insteadOf = https:\/\/github.com\//);
   assert.equal((last as { sshApplied: boolean }).sshApplied, true);
+  assert.deepEqual((last as { tcpHosts: Record<string, string> }).tcpHosts, { "pve:8006": "100.64.0.1:8006" });
   await rm(dir, { recursive: true, force: true });
 });
 

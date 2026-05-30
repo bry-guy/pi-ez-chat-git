@@ -24,7 +24,7 @@ Load this extension in the same pi process as `pi-chat`, before the first chat V
 
 ## Commands
 
-- `/chat-git enable [--identity "Name <email>"] [--no-ssh] [--ssh-agent SOCK] [--allow-host HOST]`
+- `/chat-git enable [--identity "Name <email>"] [--no-ssh] [--ssh-agent SOCK] [--allow-host HOST] [--tcp guest-host[:port]=upstream-host:port]`
 - `/chat-git disable`
 - `/chat-git identity "Name <email>"`
 - `/chat-git status`
@@ -43,7 +43,15 @@ When enabled, the VM gets a generated git config mounted at `/gondolin-git/gitco
 - `url."ssh://git@github.com/".insteadOf = https://github.com/` when SSH-agent auth is available
 - `safe.directory = *`
 
-Gondolin SSH egress is configured for `github.com` with host `SSH_AUTH_SOCK`.
+Gondolin SSH egress is configured for `github.com` with host `SSH_AUTH_SOCK` by default. Add more SSH hostnames with `--allow-host`; prefer hostnames over IP literals because Gondolin's synthetic DNS needs a hostname to associate the outbound SSH flow with an allowed upstream host.
+
+For non-HTTP/TLS TCP services such as a Proxmox API on `:8006`, add explicit TCP egress mappings with `--tcp`, for example:
+
+```text
+/chat-git enable --allow-host brain-7049-pve-sffpc --tcp pve-sffpc:8006=100.112.146.24:8006
+```
+
+Then use `https://pve-sffpc:8006/` inside the VM.
 
 ## Notes
 

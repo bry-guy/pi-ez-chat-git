@@ -12,6 +12,10 @@ export type ConversationGitConfig = {
     allowedHosts?: string[];
     knownHostsFiles?: string[];
   };
+  /** Gondolin explicit TCP egress mappings: guest host[:port] -> upstream host:port. */
+  tcp?: {
+    hosts?: Record<string, string>;
+  };
 };
 
 export type GitStore = Record<string, ConversationGitConfig>;
@@ -26,6 +30,7 @@ export type AppliedGitState = {
   allowedHosts: string[];
   agent?: string;
   knownHostsFiles: string[];
+  tcpHosts?: Record<string, string>;
   warnings: string[];
   at: string;
 };
@@ -48,6 +53,9 @@ export type VmCreateOptionsLike = {
   };
   vfs?: null | {
     mounts?: Record<string, unknown>;
+  };
+  tcp?: {
+    hosts?: Record<string, string>;
   };
 };
 
