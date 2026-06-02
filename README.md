@@ -31,7 +31,7 @@ Load this extension in the same pi process as `pi-chat`, before the first chat V
 
 These commands also work from pi-chat itself, including mention-only channels, for example `@bot /chat-git status`, `/chat-git status @bot`, or `@bot /chat-git enable`. Transcript-shaped forwarded lines such as `- [time] [uid:...] user: <@bot> /chat-git` are also recognized.
 
-After changing config, restart the pi-chat sandbox by sending `@bot /new` in the chat channel so the next `VM.create` picks it up. pi-chat currently handles `/new` before extension input hooks run, so this extension returns a reload hint rather than force-restarting the VM from inside the VM.
+After changing config, restart the pi-chat sandbox via `/new` so the next `VM.create` picks it up. pi-chat currently handles `/new` before extension input hooks run, so this extension returns the shared hint: ``Restart via `/new` for changes to take effect.``
 
 ## Guest behavior
 

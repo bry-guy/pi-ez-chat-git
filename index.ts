@@ -4,7 +4,7 @@ import { formatIdentity, parseIdentity, resolveHostGitIdentity } from "./src/git
 import { CONVERSATIONS_JSON_PATH } from "./src/paths.js";
 import { loadGitStore, readLastApply, saveGitStore } from "./src/storage.js";
 import { tryInstallRuntimeWrapper } from "./src/wrapper.js";
-import { matchSlashCommand } from "./src/match.js";
+import { CHAT_VM_RESTART_HINT, matchSlashCommand } from "./src/match.js";
 import type { ConversationGitConfig, GitIdentity } from "./src/types.js";
 
 type CommandResult = { message: string; level?: NotifyLevel; changed?: boolean };
@@ -127,7 +127,7 @@ async function defaultIdentityLines(config?: ConversationGitConfig): Promise<str
 
 function reloadHint(changed: boolean): string {
   if (!changed) return "";
-  return "\n\nReload required: send @bot /new in the chat channel to recreate the pi-chat sandbox with the updated git config.";
+  return `\n\n${CHAT_VM_RESTART_HINT}`;
 }
 
 async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<ReturnType<typeof tryInstallRuntimeWrapper>>): Promise<CommandResult> {
