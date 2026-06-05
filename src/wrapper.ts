@@ -1,7 +1,4 @@
-import { existsSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { importGondolinFromPiChat } from "./gondolin-resolver.js";
 import { identifyConversation } from "./conversation.js";
 import { renderGitconfig } from "./gitconfig.js";
 import { resolveIdentity } from "./git-identity.js";
@@ -167,27 +164,7 @@ export async function applyGitConfig(
 }
 
 async function importGondolin(): Promise<VmModuleLike> {
-  try {
-    return (await import("@earendil-works/gondolin")) as VmModuleLike;
-  } catch (bareError) {
-    const fallback = join(
-      homedir(),
-      ".pi",
-      "agent",
-      "git",
-      "github.com",
-      "earendil-works",
-      "pi-chat",
-      "node_modules",
-      "@earendil-works",
-      "gondolin",
-      "dist",
-      "src",
-      "index.js",
-    );
-    if (existsSync(fallback)) return (await import(pathToFileURL(fallback).href)) as VmModuleLike;
-    throw bareError;
-  }
+  return importGondolinFromPiChat<VmModuleLike>();
 }
 
 export async function tryInstallRuntimeWrapper(): Promise<{ installed: boolean; error?: string }> {
