@@ -7,6 +7,8 @@ function q(value: string): string {
 export type RenderGitconfigOptions = {
   identity?: GitIdentity;
   enableGithubSshRewrite: boolean;
+  enableGithubHttpsRewrite?: boolean;
+  credentialHelper?: string;
   safeDirectory?: string | string[];
 };
 
@@ -20,6 +22,13 @@ export function renderGitconfig(options: RenderGitconfigOptions): string {
   }
   if (options.enableGithubSshRewrite) {
     lines.push('[url "ssh://git@github.com/"]', "\tinsteadOf = https://github.com/", "");
+  }
+  if (options.enableGithubHttpsRewrite) {
+    lines.push('[url "https://github.com/"]', "\tinsteadOf = ssh://git@github.com/", "\tinsteadOf = git@github.com:", "");
+  }
+  if (options.credentialHelper) {
+    lines.push("[credential]", "\tuseHttpPath = true", "");
+    lines.push('[credential "https://github.com"]', `\thelper = ${q(options.credentialHelper)}`, "");
   }
   const safe = options.safeDirectory ?? "*";
   const safeDirs = Array.isArray(safe) ? safe : [safe];

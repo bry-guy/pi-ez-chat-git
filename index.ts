@@ -1,10 +1,10 @@
 import type { CommandContext, ExtensionAPI, NotifyLevel } from "./src/pi-types.js";
 import { getPersistedConversationId } from "./src/conversation.js";
+import { CHAT_GIT_CONFIG_API_KEY, createGitContributor, secretBrokerApi } from "./src/contributor.js";
 import { formatIdentity, parseIdentity, resolveHostGitIdentity } from "./src/git-identity.js";
 import { CONVERSATIONS_JSON_PATH } from "./src/paths.js";
 import { loadGitStore, readLastApply, saveGitStore } from "./src/storage.js";
-import { tryInstallRuntimeWrapper } from "./src/wrapper.js";
-import { CHAT_VM_RESTART_HINT, matchSlashCommand } from "./src/match.js";
+import { matchSlashCommand, scheduleCurrentPiChatWorkerRespawn } from "./src/match.js";
 import type { ConversationGitConfig, GitIdentity } from "./src/types.js";
 
 type CommandResult = { message: string; level?: NotifyLevel; changed?: boolean };
@@ -48,7 +48,7 @@ function shellTokens(input: string): string[] {
   return tokens;
 }
 
-function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean; sshAgent?: string; allowedHosts: string[]; tcpHosts: Record<string, string>; image?: string; env: Record<string, string> } {
+function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean; sshAgent?: string; allowedHosts: string[]; tcpHosts: Record<string, string>; image?: string; env: Record<string, string>; auth?: "ssh-agent" | "github-app"; repos: string[] } {
   const tokens = shellTokens(args);
   let identity: GitIdentity | undefined;
   let noSsh = false;
@@ -56,6 +56,8 @@ function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean
   const allowedHosts: string[] = [];
   const tcpHosts: Record<string, string> = {};
   const env: Record<string, string> = {};
+  const repos: string[] = [];
+  let auth: "ssh-agent" | "github-app" | undefined;
   let image: string | undefined;
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
@@ -69,6 +71,18 @@ function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean
       case "--no-ssh":
         noSsh = true;
         break;
+      case "--auth": {
+        const value = tokens[++i];
+        if (value !== "ssh-agent" && value !== "github-app") throw new Error("--auth must be ssh-agent or github-app");
+        auth = value;
+        break;
+      }
+      case "--repo": {
+        const value = tokens[++i];
+        if (!value || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.replace(/\.git$/, ""))) throw new Error("--repo requires owner/repo");
+        repos.push(value.replace(/\.git$/, ""));
+        break;
+      }
       case "--ssh-agent": {
         const value = tokens[++i];
         if (!value) throw new Error("--ssh-agent requires a socket path");
@@ -109,7 +123,7 @@ function parseEnableArgs(args: string): { identity?: GitIdentity; noSsh: boolean
         throw new Error(`unknown /chat-git enable argument: ${token}`);
     }
   }
-  return { identity, noSsh, sshAgent, allowedHosts, tcpHosts, image, env };
+  return { identity, noSsh, sshAgent, allowedHosts, tcpHosts, image, env, auth, repos };
 }
 
 function splitSubcommand(args: string): { subcommand: string; rest: string } {
@@ -125,34 +139,46 @@ async function defaultIdentityLines(config?: ConversationGitConfig): Promise<str
   return host ? [`identity: ${formatIdentity(host)} (host ~/.gitconfig)`] : ["identity: not configured"];
 }
 
-function reloadHint(changed: boolean): string {
+function reloadHint(changed: boolean, ctx: CommandContext): string {
   if (!changed) return "";
-  return `\n\n${CHAT_VM_RESTART_HINT}`;
+  return `\n\n${scheduleCurrentPiChatWorkerRespawn(ctx, { delaySeconds: 3 }).message}`;
 }
 
-async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<ReturnType<typeof tryInstallRuntimeWrapper>>): Promise<CommandResult> {
+async function runChatGit(args: string, ctx: CommandContext): Promise<CommandResult> {
   const { subcommand, rest } = splitSubcommand(args);
   if (subcommand === "enable") {
     const conversationId = requireConversationId(ctx);
     const parsed = parseEnableArgs(rest);
     const store = await loadGitStore();
     const previous = store[conversationId] ?? { enabled: false };
+    const auth = parsed.auth === "github-app"
+      ? { type: "github-app" as const, repos: parsed.repos.length ? parsed.repos : previous.auth?.type === "github-app" ? previous.auth.repos : [] }
+      : parsed.auth === "ssh-agent"
+        ? { type: "ssh-agent" as const }
+        : previous.auth;
+    if (auth?.type === "github-app" && auth.repos.length === 0) throw new Error("--auth github-app requires at least one --repo owner/repo");
     store[conversationId] = {
       ...previous,
       enabled: true,
+      ...(auth ? { auth } : {}),
       ...(parsed.identity ? { identity: parsed.identity } : {}),
       ...(parsed.image ? { image: parsed.image } : previous.image ? { image: previous.image } : {}),
       ...(Object.keys(parsed.env).length ? { env: { ...(previous.env ?? {}), ...parsed.env } } : previous.env ? { env: previous.env } : {}),
-      ssh: {
+      ...(auth?.type === "github-app" ? {} : { ssh: {
         ...(previous.ssh ?? {}),
         enabled: !parsed.noSsh,
         ...(parsed.sshAgent ? { agent: parsed.sshAgent } : {}),
         ...(parsed.allowedHosts.length ? { allowedHosts: parsed.allowedHosts } : previous.ssh?.allowedHosts ? { allowedHosts: previous.ssh.allowedHosts } : {}),
-      },
+      } }),
       ...(Object.keys(parsed.tcpHosts).length ? { tcp: { hosts: { ...(previous.tcp?.hosts ?? {}), ...parsed.tcpHosts } } } : previous.tcp ? { tcp: previous.tcp } : {}),
     };
     await saveGitStore(store);
-    return { changed: true, message: `Enabled pi-ez-chat-git for ${conversationId}.` };
+    if (auth?.type === "github-app") {
+      const broker = secretBrokerApi();
+      if (!broker) throw new Error("pi-ez-secret-broker is not installed/loaded; install it before using --auth github-app");
+      await broker.upsertGithubAppPolicy(conversationId, auth.repos);
+    }
+    return { changed: true, message: `Enabled pi-ez-chat-git for ${conversationId}${auth?.type === "github-app" ? ` with GitHub App auth for ${auth.repos.join(", ")}` : ""}.` };
   }
 
   if (subcommand === "disable") {
@@ -179,7 +205,7 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
   const ids = conversationId ? [conversationId] : Object.keys(store).sort();
   const lines: string[] = [];
   lines.push(`storage: ${CONVERSATIONS_JSON_PATH}`);
-  lines.push(`VM.create wrapper: ${wrapper.error ? `not installed (${wrapper.error})` : wrapper.installed ? "installed" : "already installed"}`);
+  lines.push("VM config: registered with pi-chat contributor registry");
   if (ids.length === 0) lines.push("no connected pi-chat conversation and no stored chat-git configs");
   for (const id of ids) {
     const config = store[id];
@@ -195,9 +221,13 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
       lines.push("  env:");
       for (const [key, value] of Object.entries(config.env).sort(([a], [b]) => a.localeCompare(b))) lines.push(`    ${key}=${value}`);
     }
-    lines.push(`  ssh: ${config.ssh?.enabled === false ? "disabled" : "enabled"}`);
-    lines.push(`  allowed hosts: ${(config.ssh?.allowedHosts ?? ["github.com"]).join(", ")}`);
-    lines.push(`  ssh agent: ${config.ssh?.agent ?? process.env.SSH_AUTH_SOCK ?? "not set"}`);
+    lines.push(`  auth: ${config.auth?.type ?? "ssh-agent"}`);
+    if (config.auth?.type === "github-app") lines.push(`  GitHub App repos: ${config.auth.repos.join(", ") || "none"}`);
+    else {
+      lines.push(`  ssh: ${config.ssh?.enabled === false ? "disabled" : "enabled"}`);
+      lines.push(`  allowed hosts: ${(config.ssh?.allowedHosts ?? ["github.com"]).join(", ")}`);
+      lines.push(`  ssh agent: ${config.ssh?.agent ?? process.env.SSH_AUTH_SOCK ?? "not set"}`);
+    }
     const tcpHosts = config.tcp?.hosts ?? {};
     if (Object.keys(tcpHosts).length > 0) {
       lines.push("  tcp mappings:");
@@ -214,6 +244,8 @@ async function runChatGit(args: string, ctx: CommandContext, wrapper: Awaited<Re
       lines.push("  env:");
       for (const [key, value] of Object.entries(last.env).sort(([a], [b]) => a.localeCompare(b))) lines.push(`    ${key}=${value}`);
     }
+    lines.push(`  auth: ${last.authType ?? "ssh-agent"}`);
+    if (last.githubAppRepos?.length) lines.push(`  GitHub App repos: ${last.githubAppRepos.join(", ")}`);
     lines.push(`  ssh applied: ${last.sshApplied ? "yes" : "no"}`);
     lines.push(`  allowed hosts: ${last.allowedHosts.join(", ") || "none"}`);
     lines.push(`  known_hosts: ${last.knownHostsFiles.join(", ") || "none"}`);
@@ -231,14 +263,34 @@ function fenced(text: string): string {
 }
 
 export default async function (pi: ExtensionAPI) {
-  const wrapper = await tryInstallRuntimeWrapper();
+  const registryKey = Symbol.for("pi-chat.vmConfigContributors.v1");
+  const registeredKey = Symbol.for("pi-ez-chat-git.vmConfigContributorRegistered");
+  const globals = globalThis as Record<symbol, unknown>;
+  globals[CHAT_GIT_CONFIG_API_KEY] = {
+    async configureGithubAppAuth(conversationId: string, repos: string[]) {
+      const store = await loadGitStore();
+      const previous = store[conversationId] ?? { enabled: false };
+      store[conversationId] = { ...previous, enabled: true, auth: { type: "github-app", repos } };
+      await saveGitStore(store);
+      const broker = secretBrokerApi();
+      if (!broker) throw new Error("pi-ez-secret-broker is not installed/loaded; install it before using GitHub App auth");
+      await broker.upsertGithubAppPolicy(conversationId, repos);
+    },
+  };
+
+  if (!globals[registeredKey]) {
+    const registry = (globals[registryKey] as { contributors: unknown[] } | undefined) ?? { contributors: [] };
+    globals[registryKey] = registry;
+    registry.contributors.push(createGitContributor());
+    globals[registeredKey] = true;
+  }
 
   pi.registerCommand("chat-git", {
     description: "Configure git identity and SSH-agent GitHub auth for the connected pi-chat Gondolin VM",
     handler: async (args, ctx) => {
       try {
-        const result = await runChatGit(args, ctx, wrapper);
-        notice(ctx, `${result.message}${reloadHint(result.changed ?? false)}`, result.level);
+        const result = await runChatGit(args, ctx);
+        notice(ctx, `${result.message}${reloadHint(result.changed ?? false, ctx)}`, result.level);
       } catch (error) {
         notice(ctx, error instanceof Error ? error.message : String(error), "error");
       }
@@ -249,10 +301,10 @@ export default async function (pi: ExtensionAPI) {
     const match = matchSlashCommand(event.text, ["chat-git"]);
     if (!match) return { action: "continue" };
     try {
-      const result = await runChatGit(match.args, ctx, wrapper);
+      const result = await runChatGit(match.args, ctx);
       return {
         action: "transform",
-        text: `The remote /chat-git command completed. Reply to the user with exactly this fenced code block and no other text:\n\n${fenced(`${result.message}${reloadHint(result.changed ?? false)}`)}`,
+        text: `The remote /chat-git command completed. Reply to the user with exactly this fenced code block and no other text:\n\n${fenced(`${result.message}${reloadHint(result.changed ?? false, ctx)}`)}`,
       };
     } catch (error) {
       return {

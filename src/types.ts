@@ -3,9 +3,14 @@ export type GitIdentity = {
   email: string;
 };
 
+export type GitAuthConfig =
+  | { type: "ssh-agent" }
+  | { type: "github-app"; repos: string[] };
+
 export type ConversationGitConfig = {
   enabled: boolean;
   identity?: GitIdentity;
+  auth?: GitAuthConfig;
   /** Optional Gondolin image to use for this conversation. */
   image?: string;
   /** Non-secret environment variables to inject into the VM. */
@@ -31,6 +36,8 @@ export type AppliedGitState = {
   gitconfigGuestPath?: string;
   image?: string;
   env?: Record<string, string>;
+  authType?: string;
+  githubAppRepos?: string[];
   sshEnabled: boolean;
   sshApplied: boolean;
   allowedHosts: string[];

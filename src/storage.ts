@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { CHAT_GIT_DIR, CONVERSATIONS_JSON_PATH, DEBUG_LOG_PATH, GENERATED_DIR, LAST_APPLY_JSON_PATH } from "./paths.js";
 import type { AppliedGitState, GitStore } from "./types.js";
@@ -52,10 +52,23 @@ export function generatedConversationDir(conversationId: string): string {
 }
 
 export async function writeGeneratedGitconfig(conversationId: string, content: string): Promise<string> {
+  return writeGeneratedGitAssets(conversationId, { gitconfig: content });
+}
+
+export async function writeGeneratedGitAssets(conversationId: string, assets: { gitconfig: string; helperShell?: string; helperJs?: string }): Promise<string> {
   const dir = generatedConversationDir(conversationId);
   await mkdir(dir, { recursive: true });
-  const path = join(dir, "gitconfig");
-  await writeFile(path, content, "utf8");
+  await writeFile(join(dir, "gitconfig"), assets.gitconfig, "utf8");
+  if (assets.helperShell) {
+    const helperPath = join(dir, "github-app-helper");
+    await writeFile(helperPath, assets.helperShell, "utf8");
+    await chmod(helperPath, 0o755).catch(() => undefined);
+  }
+  if (assets.helperJs) {
+    const jsPath = join(dir, "github-app-helper.js");
+    await writeFile(jsPath, assets.helperJs, "utf8");
+    await chmod(jsPath, 0o755).catch(() => undefined);
+  }
   return dir;
 }
 

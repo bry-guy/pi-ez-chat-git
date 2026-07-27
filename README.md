@@ -47,3 +47,13 @@ After changing config, restart the chat sandbox with `/new` so the next VM picks
 - GitHub push auth uses your host `SSH_AUTH_SOCK` through the Gondolin SSH proxy. Private keys stay on the host.
 - Additional SSH hosts and TCP egress can be added with `--allow-host` and `--tcp` on `enable`. See `/chat-git enable --help` style usage in the source for the full flag set.
 - This package assumes the guest image has `git` and `ssh` clients installed.
+
+## GitHub App auth
+
+For unattended chat workers, prefer GitHub App HTTPS auth instead of a personal SSH agent:
+
+```text
+/chat-git enable --auth github-app --repo bry-guy/pi-ez-chat-workspace
+```
+
+This requires `pi-ez-secret-broker` to be installed and configured with a private GitHub App. In this mode `pi-ez-chat-git` rewrites GitHub SSH remotes to HTTPS and installs a Git credential helper inside the VM. The helper calls the host broker on demand and receives a short-lived installation token. No personal SSH key or 1Password SSH approval is required.

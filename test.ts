@@ -5,10 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseGitconfigIdentity, parseIdentity, resolveHostGitIdentity } from "./src/git-identity.js";
 import { renderGitconfig } from "./src/gitconfig.js";
+import { GITHUB_APP_HELPER_PATH, extractRepoFromCredentialInput } from "./src/github-app-helper.js";
+import { createGitContributor } from "./src/contributor.js";
 import { resolveSshAuth } from "./src/ssh.js";
-import { applyGitConfig, installVmCreateWrapper } from "./src/wrapper.js";
 import { matchSlashCommand, normalizeRemoteCommandText, stripLeadingMention } from "./src/match.js";
-import type { GitStore, VmCreateOptionsLike } from "./src/types.js";
+import type { GitStore } from "./src/types.js";
 
 test("matches slash commands after leading bot mentions", () => {
   assert.equal(stripLeadingMention("  @bot /chat-git status"), "/chat-git status");
@@ -59,6 +60,26 @@ test("renders generated gitconfig", () => {
   assert.match(content, /directory = \*/);
 });
 
+
+test("renders GitHub App HTTPS gitconfig", () => {
+  const content = renderGitconfig({
+    identity: { name: "Ada", email: "ada@example.com" },
+    enableGithubSshRewrite: false,
+    enableGithubHttpsRewrite: true,
+    credentialHelper: GITHUB_APP_HELPER_PATH,
+    safeDirectory: "*",
+  });
+  assert.match(content, /insteadOf = ssh:\/\/git@github.com\//);
+  assert.match(content, /insteadOf = git@github.com:/);
+  assert.match(content, /useHttpPath = true/);
+  assert.match(content, /helper = \/gondolin-git\/github-app-helper/);
+});
+
+test("GitHub App helper extracts repo from git credential input", () => {
+  assert.equal(extractRepoFromCredentialInput("protocol=https\nhost=github.com\npath=bry-guy/pi-ez-chat-workspace.git\n"), "bry-guy/pi-ez-chat-workspace");
+  assert.equal(extractRepoFromCredentialInput("protocol=https\nhost=example.com\npath=bry-guy/pi-ez-chat-workspace.git\n"), undefined);
+});
+
 test("resolves ssh auth only when agent is available", () => {
   const old = process.env.SSH_AUTH_SOCK;
   delete process.env.SSH_AUTH_SOCK;
@@ -72,10 +93,8 @@ test("resolves ssh auth only when agent is available", () => {
   else process.env.SSH_AUTH_SOCK = old;
 });
 
-test("applyGitConfig mutates VM options for enabled conversation", async () => {
+test("git contributor returns VM fragment for enabled conversation", async () => {
   const dir = await mkdtemp(join(tmpdir(), "chat-git-"));
-  const workspace = join(process.env.HOME!, ".pi/agent/chat/accounts/acct/channels/chan/workspace");
-  const opts: VmCreateOptionsLike = { vfs: { mounts: { "/workspace": { rootPath: workspace } } } };
   const store: GitStore = {
     "acct/chan": {
       enabled: true,
@@ -87,29 +106,34 @@ test("applyGitConfig mutates VM options for enabled conversation", async () => {
     },
   };
   let last: unknown;
-  await applyGitConfig(
-    opts,
-    (hostPath, readonly) => ({ hostPath, readonly }),
-    {
-      loadStore: async () => store,
-      writeLast: async (state) => {
-        last = state;
-      },
-      writeGitconfig: async (_conversationId, content) => {
-        await writeFile(join(dir, "gitconfig"), content);
-        return dir;
-      },
-      debug: async () => undefined,
+  class RealFSProvider {
+    constructor(public hostPath: string) {}
+  }
+  class ReadonlyProvider {
+    constructor(public provider: unknown) {}
+  }
+  const contributor = createGitContributor({
+    loadStore: async () => store,
+    writeLast: async (state) => {
+      last = state;
     },
-  );
-  assert.deepEqual(opts.vfs?.mounts?.["/gondolin-git"], { hostPath: dir, readonly: true });
-  assert.equal(opts.ssh?.agent, "/tmp/agent.sock");
-  assert.deepEqual(opts.ssh?.allowedHosts, ["github.com"]);
-  assert.equal(opts.sandbox?.imagePath, "pi-ez-chat:latest");
-  assert.equal(opts.dns?.mode, "synthetic");
-  assert.equal(opts.dns?.syntheticHostMapping, "per-host");
-  assert.deepEqual(opts.tcp?.hosts, { "pve:8006": "100.64.0.1:8006" });
-  assert.deepEqual(opts.env, {
+    writeGitAssets: async (_conversationId: string, assets) => {
+      await writeFile(join(dir, "gitconfig"), assets.gitconfig);
+      if (assets.helperShell) await writeFile(join(dir, "github-app-helper"), assets.helperShell);
+      if (assets.helperJs) await writeFile(join(dir, "github-app-helper.js"), assets.helperJs);
+      return dir;
+    },
+    debug: async () => undefined,
+  });
+  const fragment = (await contributor.contribute({ conversationId: "acct/chan", gondolin: { RealFSProvider, ReadonlyProvider } })) as any;
+  assert.deepEqual(fragment?.vfs?.mounts?.["/gondolin-git"], new ReadonlyProvider(new RealFSProvider(dir)));
+  assert.equal(fragment?.ssh?.agent, "/tmp/agent.sock");
+  assert.deepEqual(fragment?.ssh?.allowedHosts, ["github.com"]);
+  assert.equal(fragment?.sandbox?.imagePath, "pi-ez-chat:latest");
+  assert.equal(fragment?.dns?.mode, "synthetic");
+  assert.equal(fragment?.dns?.syntheticHostMapping, "per-host");
+  assert.deepEqual(fragment?.tcp?.hosts, { "pve:8006": "100.64.0.1:8006" });
+  assert.deepEqual(fragment?.env, {
     SELFHOST_PROXMOX_ENDPOINT: "https://pve:8006/",
     GIT_CONFIG_SYSTEM: "/gondolin-git/gitconfig",
     GIT_TERMINAL_PROMPT: "0",
@@ -122,30 +146,33 @@ test("applyGitConfig mutates VM options for enabled conversation", async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-test("VM.create wrapper is idempotent and forwards", async () => {
-  let called = 0;
-  const module: { VM: { create: (options?: VmCreateOptionsLike) => Promise<unknown> }; RealFSProvider: new (rootPath: string) => unknown; ReadonlyProvider: new (inner: unknown) => unknown } = {
-    VM: {
-      create: async (_options?: VmCreateOptionsLike) => {
-        called++;
-        return { ok: true };
-      },
-    },
-    RealFSProvider: class {
-      rootPath: string;
-      constructor(rootPath: string) {
-        this.rootPath = rootPath;
-      }
-    },
-    ReadonlyProvider: class {
-      inner: unknown;
-      constructor(inner: unknown) {
-        this.inner = inner;
-      }
+
+test("git contributor configures GitHub App auth without SSH", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "chat-git-app-"));
+  const store: GitStore = {
+    "acct/chan": {
+      enabled: true,
+      identity: { name: "Ada", email: "ada@example.com" },
+      auth: { type: "github-app", repos: ["bry-guy/pi-ez-chat-workspace"] },
     },
   };
-  assert.equal(installVmCreateWrapper(module), true);
-  assert.equal(installVmCreateWrapper(module), false);
-  await module.VM.create({});
-  assert.equal(called, 1);
+  class RealFSProvider { constructor(public hostPath: string) {} }
+  class ReadonlyProvider { constructor(public provider: unknown) {} }
+  const contributor = createGitContributor({
+    loadStore: async () => store,
+    writeLast: async () => undefined,
+    writeGitAssets: async (_conversationId: string, assets) => {
+      await writeFile(join(dir, "gitconfig"), assets.gitconfig);
+      if (assets.helperShell) await writeFile(join(dir, "github-app-helper"), assets.helperShell);
+      if (assets.helperJs) await writeFile(join(dir, "github-app-helper.js"), assets.helperJs);
+      return dir;
+    },
+    debug: async () => undefined,
+  });
+  const fragment = (await contributor.contribute({ conversationId: "acct/chan", gondolin: { RealFSProvider, ReadonlyProvider } })) as any;
+  assert.equal(fragment?.ssh, undefined);
+  assert.equal(fragment?.env?.GIT_SSH_COMMAND, undefined);
+  assert.match(await readFile(join(dir, "gitconfig"), "utf8"), /helper = \/gondolin-git\/github-app-helper/);
+  assert.match(await readFile(join(dir, "github-app-helper.js"), "utf8"), /github-app-token/);
+  await rm(dir, { recursive: true, force: true });
 });
